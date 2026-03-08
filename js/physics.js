@@ -19,29 +19,32 @@ function initBulletWorld(AmmoLib) {
   physWorld.setGravity(new Ammo.btVector3(0, -20, 0));
 }
 
-function buildBulletTerrain(heights) {
-  const segs1 = TERRAIN_SEGMENTS + 1;
-  const mesh = new Ammo.btTriangleMesh(true, false);
+// Build a Bullet collision body for one terrain chunk
+function buildChunkBody(cx, cz, heights) {
+  const segs1 = CHUNK_SEGS + 1;
+  const triMesh = new Ammo.btTriangleMesh(true, false);
+  const originX = cx * CHUNK_SIZE;
+  const originZ = cz * CHUNK_SIZE;
 
-  for (let row = 0; row < TERRAIN_SEGMENTS; row++) {
-    for (let col = 0; col < TERRAIN_SEGMENTS; col++) {
-      const x0 = (col       / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
-      const x1 = ((col + 1) / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
-      const z0 = (row       / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
-      const z1 = ((row + 1) / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+  for (let row = 0; row < CHUNK_SEGS; row++) {
+    for (let col = 0; col < CHUNK_SEGS; col++) {
+      const x0 = originX + (col       / CHUNK_SEGS) * CHUNK_SIZE;
+      const x1 = originX + ((col + 1) / CHUNK_SEGS) * CHUNK_SIZE;
+      const z0 = originZ + (row       / CHUNK_SEGS) * CHUNK_SIZE;
+      const z1 = originZ + ((row + 1) / CHUNK_SEGS) * CHUNK_SIZE;
 
       const h00 = heights[ row      * segs1 + col     ];
       const h10 = heights[ row      * segs1 + col + 1 ];
       const h01 = heights[(row + 1) * segs1 + col     ];
       const h11 = heights[(row + 1) * segs1 + col + 1 ];
 
-      mesh.addTriangle(
+      triMesh.addTriangle(
         new Ammo.btVector3(x0, h00, z0),
         new Ammo.btVector3(x1, h10, z0),
         new Ammo.btVector3(x0, h01, z1),
         false
       );
-      mesh.addTriangle(
+      triMesh.addTriangle(
         new Ammo.btVector3(x1, h10, z0),
         new Ammo.btVector3(x1, h11, z1),
         new Ammo.btVector3(x0, h01, z1),
@@ -50,8 +53,7 @@ function buildBulletTerrain(heights) {
     }
   }
 
-  const shape = new Ammo.btBvhTriangleMeshShape(mesh, true, true);
-
+  const shape = new Ammo.btBvhTriangleMeshShape(triMesh, true, true);
   const transform = new Ammo.btTransform();
   transform.setIdentity();
   transform.setOrigin(new Ammo.btVector3(0, 0, 0));
@@ -64,5 +66,5 @@ function buildBulletTerrain(heights) {
   body.setRestitution(0.0);
   physWorld.addRigidBody(body);
 
-  return body;
+  return { body, triMesh };
 }

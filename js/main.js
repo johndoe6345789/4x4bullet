@@ -35,6 +35,7 @@ const PHYSICS_SUBSTEPS = 3;
 const PHYSICS_FIXED_DT = 1/120;
 
 var lastTime = 0;
+var chunkTimer = 0;
 
 function mainLoop(timestamp) {
   requestAnimationFrame(mainLoop);
@@ -51,6 +52,13 @@ function mainLoop(timestamp) {
     updateDust(dt);
     updateCamera(dt);
     updateHUD();
+
+    // Stream terrain chunks around the vehicle (throttled)
+    chunkTimer += dt;
+    if (chunkTimer > 0.5) {
+      chunkTimer = 0;
+      updateChunks(carGroup.position.x, carGroup.position.z);
+    }
   }
 
   renderer.render(scene, camera);
@@ -87,15 +95,12 @@ async function boot() {
   initBulletWorld(AmmoLib);
   btTmp = new AmmoLib.btTransform();
 
-  setLoadStatus('BUILDING TERRAIN...', 35);
-  const { heights } = buildTerrainData();
-
-  setLoadStatus('UPLOADING TO BULLET...', 50);
-  buildBulletTerrain(heights);
-
-  setLoadStatus('BUILDING THREE.JS SCENE...', 62);
+  setLoadStatus('BUILDING THREE.JS SCENE...', 40);
   initThree();
-  scene.add(buildThreeTerrain(heights));
+
+  setLoadStatus('LOADING TERRAIN CHUNKS...', 55);
+  // Load initial chunks around spawn (0, 0)
+  updateChunks(0, 0);
 
   setLoadStatus('PLACING CHECKPOINTS...', 72);
   buildCheckpoints(scene);
@@ -105,8 +110,7 @@ async function boot() {
   buildVehicle(0, spawnY, 0);
   buildCarVisual();
 
-  setLoadStatus('POPULATING SCENERY...', 90);
-  buildScenery();
+  setLoadStatus('BUILDING EFFECTS...', 92);
   buildDustSystem();
 
   setLoadStatus('READY', 100);

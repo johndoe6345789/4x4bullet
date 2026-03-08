@@ -31,35 +31,35 @@ function terrainHeight(worldX, worldZ) {
   return macro + mid + fine + bowl;
 }
 
-// Terrain grid constants
-const TERRAIN_SIZE     = 512;
-const TERRAIN_SEGMENTS = 128;
-const TERRAIN_VERTEX_COUNT = (TERRAIN_SEGMENTS + 1) * (TERRAIN_SEGMENTS + 1);
+// Chunk-based terrain constants
+const CHUNK_SIZE = 128;   // world units per chunk
+const CHUNK_SEGS = 32;    // grid resolution per chunk
+const CHUNK_VERTS = (CHUNK_SEGS + 1) * (CHUNK_SEGS + 1);
 
-function buildTerrainData() {
-  const heights = new Float32Array(TERRAIN_VERTEX_COUNT);
-  let minH = Infinity, maxH = -Infinity;
+// Build heights array for a chunk at grid position (cx, cz)
+function buildChunkHeights(cx, cz) {
+  const heights = new Float32Array(CHUNK_VERTS);
+  const originX = cx * CHUNK_SIZE;
+  const originZ = cz * CHUNK_SIZE;
 
-  for (let row = 0; row <= TERRAIN_SEGMENTS; row++) {
-    for (let col = 0; col <= TERRAIN_SEGMENTS; col++) {
-      const wx = (col / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
-      const wz = (row / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
-      const h  = terrainHeight(wx, wz);
-      heights[row * (TERRAIN_SEGMENTS + 1) + col] = h;
-      if (h < minH) minH = h;
-      if (h > maxH) maxH = h;
+  for (let row = 0; row <= CHUNK_SEGS; row++) {
+    for (let col = 0; col <= CHUNK_SEGS; col++) {
+      const wx = originX + (col / CHUNK_SEGS) * CHUNK_SIZE;
+      const wz = originZ + (row / CHUNK_SEGS) * CHUNK_SIZE;
+      heights[row * (CHUNK_SEGS + 1) + col] = terrainHeight(wx, wz);
     }
   }
-
-  return { heights, minH, maxH };
+  return heights;
 }
 
-function buildThreeTerrain(heights) {
-  const geo = new THREE.PlaneGeometry(
-    TERRAIN_SIZE, TERRAIN_SIZE,
-    TERRAIN_SEGMENTS, TERRAIN_SEGMENTS
-  );
+// Build Three.js mesh for a chunk
+function buildChunkMesh(cx, cz, heights) {
+  const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGS, CHUNK_SEGS);
   geo.rotateX(-Math.PI / 2);
+
+  const originX = cx * CHUNK_SIZE + CHUNK_SIZE * 0.5;
+  const originZ = cz * CHUNK_SIZE + CHUNK_SIZE * 0.5;
+  geo.translate(originX, 0, originZ);
 
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -75,9 +75,10 @@ function buildThreeTerrain(heights) {
     else if (h < 5.0)  { r=0.50; g=0.44; b=0.30; }
     else if (h < 10.0) { r=0.43; g=0.38; b=0.33; }
     else               { r=0.58; g=0.55; b=0.52; }
-    col[i*3+0] = r + (Math.random()-0.5)*0.06;
-    col[i*3+1] = g + (Math.random()-0.5)*0.05;
-    col[i*3+2] = b + (Math.random()-0.5)*0.05;
+    const seed = noiseHash(i * 0.1 + cx * 73.1 + cz * 137.3);
+    col[i*3+0] = r + (seed - 0.5) * 0.06;
+    col[i*3+1] = g + (noiseHash(seed * 97.1) - 0.5) * 0.05;
+    col[i*3+2] = b + (noiseHash(seed * 31.7) - 0.5) * 0.05;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
