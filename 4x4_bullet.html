@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DIRT KINGS — Bullet Physics</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
+#c { display: block; }
+
+/* ── Loading screen ── */
+#loading {
+  position: fixed; inset: 0; background: #0a0a0a;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 100;
+}
+#loading h1 { font-size: 64px; font-weight: 900; letter-spacing: 8px; color: #ff8c00; margin-bottom: 12px; }
+#loading .sub { font-size: 13px; letter-spacing: 6px; color: #555; margin-bottom: 48px; }
+#loading-bar-track { width: 320px; height: 2px; background: #1a1a1a; }
+#loading-bar { height: 100%; width: 0%; background: #ff8c00; transition: width 0.2s; }
+#loading-status { margin-top: 16px; font-size: 11px; letter-spacing: 2px; color: #444; }
+
+/* ── Title screen ── */
+#title {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.88);
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 90;
+}
+#title h1 { font-size: 80px; font-weight: 900; letter-spacing: 10px; color: #ff8c00;
+  text-shadow: 0 0 80px rgba(255,140,0,0.5); margin-bottom: 8px; }
+#title .sub { font-size: 14px; letter-spacing: 10px; color: #666; margin-bottom: 64px; }
+#title button {
+  background: #ff8c00; color: #000; border: none; padding: 18px 56px;
+  font-family: 'Courier New', monospace; font-size: 16px; font-weight: 900;
+  letter-spacing: 5px; cursor: pointer; transition: all 0.15s;
+}
+#title button:hover { background: #fff; transform: scale(1.04); }
+
+/* ── HUD ── */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+#speedo {
+  position: absolute; bottom: 32px; right: 44px; text-align: right;
+}
+#speed-num {
+  font-size: 76px; font-weight: 900; letter-spacing: -3px; line-height: 1;
+  color: #ff8c00; text-shadow: 0 0 30px rgba(255,140,0,0.6);
+}
+#speed-unit { font-size: 12px; letter-spacing: 5px; color: #555; margin-top: 2px; }
+
+#gear-display {
+  position: absolute; bottom: 128px; right: 54px;
+  font-size: 44px; font-weight: 900; color: #fff; opacity: 0.6;
+}
+
+#rpm-container {
+  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+  width: 280px;
+}
+#rpm-bar { height: 3px; background: #111; width: 100%; }
+#rpm-fill { height: 100%; width: 0%; background: #ff8c00; }
+#rpm-label { font-size: 10px; letter-spacing: 4px; color: #333; text-align: center; margin-top: 8px; }
+
+#lap-hud {
+  position: absolute; top: 28px; left: 50%; transform: translateX(-50%);
+  text-align: center;
+}
+#lap-time { font-size: 30px; font-weight: 900; color: #ff8c00; }
+#lap-label { font-size: 10px; letter-spacing: 4px; color: #444; margin-top: 4px; }
+
+#controls {
+  position: absolute; bottom: 32px; left: 36px;
+  font-size: 11px; letter-spacing: 2px; line-height: 2.2; color: #444;
+}
+
+#wheel-hud {
+  position: absolute; top: 28px; right: 36px;
+  font-size: 10px; letter-spacing: 1px; line-height: 2.0; color: #444;
+}
+.w-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%; background: #ff8c00; margin-right: 6px; vertical-align: middle;
+}
+.w-dot.air { background: #2a2a2a; }
+
+#cp-flash {
+  position: absolute; top: 48%; left: 50%; transform: translate(-50%,-50%);
+  font-size: 44px; font-weight: 900; letter-spacing: 8px; color: #ff8c00;
+  text-shadow: 0 0 40px #ff8c00; opacity: 0; transition: opacity 0.6s;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<!-- Loading -->
+<div id="loading">
+  <h1>DIRT KINGS</h1>
+  <div class="sub">BULLET PHYSICS EDITION</div>
+  <div id="loading-bar-track"><div id="loading-bar"></div></div>
+  <div id="loading-status">INITIALISING BULLET...</div>
+</div>
+
+<!-- Title -->
+<div id="title">
+  <h1>DIRT KINGS</h1>
+  <div class="sub">4×4 OPEN TERRAIN</div>
+  <button onclick="startRace()">IGNITION</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="speedo">
+    <div id="speed-num">0</div>
+    <div id="speed-unit">KM/H</div>
+  </div>
+  <div id="gear-display">N</div>
+  <div id="rpm-container">
+    <div id="rpm-bar"><div id="rpm-fill"></div></div>
+    <div id="rpm-label">RPM</div>
+  </div>
+  <div id="lap-hud">
+    <div id="lap-time">0:00.000</div>
+    <div id="lap-label">LAP 1</div>
+  </div>
+  <div id="controls">
+    W / ↑ &nbsp; THROTTLE<br>
+    S / ↓ &nbsp; BRAKE<br>
+    A / ← &nbsp; LEFT<br>
+    D / → &nbsp; RIGHT<br>
+    SPACE &nbsp; HANDBRAKE<br>
+    R &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RESET
+  </div>
+  <div id="wheel-hud">
+    <div><span class="w-dot" id="w-fl"></span>FL</div>
+    <div><span class="w-dot" id="w-fr"></span>FR</div>
+    <div><span class="w-dot" id="w-rl"></span>RL</div>
+    <div><span class="w-dot" id="w-rr"></span>RR</div>
+  </div>
+  <div id="cp-flash">CHECKPOINT!</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+  // Load Ammo.js from CDN with fallback — sets window.__ammoReady promise
+  window.__ammoReady = new Promise(function(resolve, reject) {
+    var cdns = [
+      'https://cdn.jsdelivr.net/npm/ammo.js@0.0.10/ammo.js',
+      'https://unpkg.com/ammo.js@0.0.10/ammo.js',
+      'https://kripken.github.io/ammo.js/builds/ammo.js'
+    ];
+    var idx = 0;
+    function tryLoad() {
+      if (idx >= cdns.length) { reject(new Error('All Ammo.js CDNs failed')); return; }
+      var s = document.createElement('script');
+      s.src = cdns[idx++];
+      s.onload = function() { resolve(); };
+      s.onerror = tryLoad;
+      document.head.appendChild(s);
+    }
+    tryLoad();
+  });
+</script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TERRAIN NOISE
+// Deterministic value noise — always returns 0..1, no negative discontinuities.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function noiseHash(n) {
+  const s = Math.sin(n) * 43758.5453123;
+  return s - Math.floor(s);
+}
+
+function valueNoise2D(x, z) {
+  const ix = Math.floor(x), iz = Math.floor(z);
+  const fx = x - ix,        fz = z - iz;
+  // Smoothstep interpolation — eliminates derivative discontinuities at cell edges
+  const ux = fx * fx * (3.0 - 2.0 * fx);
+  const uz = fz * fz * (3.0 - 2.0 * fz);
+  const h00 = noiseHash(ix     + iz     * 57.0);
+  const h10 = noiseHash(ix + 1 + iz     * 57.0);
+  const h01 = noiseHash(ix     + (iz+1) * 57.0);
+  const h11 = noiseHash(ix + 1 + (iz+1) * 57.0);
+  return h00*(1-ux)*(1-uz) + h10*ux*(1-uz) + h01*(1-ux)*uz + h11*ux*uz;
+}
+
+function terrainHeight(worldX, worldZ) {
+  // Scale world coords into noise space.
+  // Low frequencies → broad hills. Higher → gentle undulation. Fine → texture.
+  // All amplitudes kept small so no cliff faces.
+  const nx = worldX * 0.004;
+  const nz = worldZ * 0.004;
+
+  const macro  = valueNoise2D(nx * 1.0 + 0.0,  nz * 1.0 + 0.0 ) * 10.0;  // broad hills
+  const mid    = valueNoise2D(nx * 2.3 + 5.1,  nz * 2.3 + 3.7 ) *  4.0;  // secondary rolls
+  const fine   = valueNoise2D(nx * 6.0 + 11.3, nz * 6.0 + 8.9 ) *  1.2;  // surface bumps
+  // Cosine bowl gives a wide smooth depression across the map — no edge
+  const bowl   = Math.cos(worldX * 0.007) * Math.cos(worldZ * 0.007) * 2.5;
+
+  return macro + mid + fine + bowl;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TERRAIN MESH BUILDER
+// Builds both the Three.js renderable mesh and a flat Float32Array of heights
+// for the Bullet btHeightfieldTerrainShape.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const TERRAIN_SIZE     = 512;   // world units, square
+const TERRAIN_SEGMENTS = 128;   // vertex grid resolution per axis
+const TERRAIN_VERTEX_COUNT = (TERRAIN_SEGMENTS + 1) * (TERRAIN_SEGMENTS + 1);
+
+function buildTerrainData() {
+  // Heights array — indexed [row * (segs+1) + col], row = Z axis
+  const heights = new Float32Array(TERRAIN_VERTEX_COUNT);
+  let minH = Infinity, maxH = -Infinity;
+
+  for (let row = 0; row <= TERRAIN_SEGMENTS; row++) {
+    for (let col = 0; col <= TERRAIN_SEGMENTS; col++) {
+      const wx = (col / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+      const wz = (row / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+      const h  = terrainHeight(wx, wz);
+      heights[row * (TERRAIN_SEGMENTS + 1) + col] = h;
+      if (h < minH) minH = h;
+      if (h > maxH) maxH = h;
+    }
+  }
+
+  return { heights, minH, maxH };
+}
+
+function buildThreeTerrain(heights) {
+  const geo = new THREE.PlaneGeometry(
+    TERRAIN_SIZE, TERRAIN_SIZE,
+    TERRAIN_SEGMENTS, TERRAIN_SEGMENTS
+  );
+  geo.rotateX(-Math.PI / 2);
+
+  // Apply heights to geometry vertices
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, heights[i]);
+  }
+  geo.computeVertexNormals();
+
+  // Vertex colours by height zone
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const h = heights[i];
+    let r, g, b;
+    if      (h < 1.5)  { r=0.28; g=0.42; b=0.22; }  // low grass
+    else if (h < 5.0)  { r=0.50; g=0.44; b=0.30; }  // dirt
+    else if (h < 10.0) { r=0.43; g=0.38; b=0.33; }  // rocky dirt
+    else               { r=0.58; g=0.55; b=0.52; }  // stone
+    // Slight random variation so it doesn't look flat
+    col[i*3+0] = r + (Math.random()-0.5)*0.06;
+    col[i*3+1] = g + (Math.random()-0.5)*0.05;
+    col[i*3+2] = b + (Math.random()-0.5)*0.05;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BULLET WORLD SETUP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let Ammo; // will be set once Ammo() promise resolves
+let physWorld;           // btDiscreteDynamicsWorld
+let vehicleBody;         // btRigidBody for the chassis
+let vehicle;             // btRaycastVehicle
+let vehicleTuning;       // btVehicleTuning
+
+function initBulletWorld(AmmoLib) {
+  Ammo = AmmoLib;
+
+  // Broadphase: DBVT (dynamic bounding volume tree) — good general purpose
+  const broadphase        = new Ammo.btDbvtBroadphase();
+
+  // Collision configuration + dispatcher
+  const collisionConfig   = new Ammo.btDefaultCollisionConfiguration();
+  const dispatcher        = new Ammo.btCollisionDispatcher(collisionConfig);
+
+  // Constraint solver
+  const solver            = new Ammo.btSequentialImpulseConstraintSolver();
+
+  // Assemble the world
+  physWorld = new Ammo.btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfig);
+  physWorld.setGravity(new Ammo.btVector3(0, -20, 0));
+}
+
+function buildBulletTerrain(heights) {
+  // btHeightfieldTerrainShape is NOT in the standard ammo.js build.
+  // Use btBvhTriangleMeshShape with the same vertex grid instead.
+  const segs1 = TERRAIN_SEGMENTS + 1;
+  const mesh = new Ammo.btTriangleMesh(true, false);
+
+  for (let row = 0; row < TERRAIN_SEGMENTS; row++) {
+    for (let col = 0; col < TERRAIN_SEGMENTS; col++) {
+      // World-space positions matching the Three.js PlaneGeometry layout
+      const x0 = (col       / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+      const x1 = ((col + 1) / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+      const z0 = (row       / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+      const z1 = ((row + 1) / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+
+      const h00 = heights[ row      * segs1 + col     ];
+      const h10 = heights[ row      * segs1 + col + 1 ];
+      const h01 = heights[(row + 1) * segs1 + col     ];
+      const h11 = heights[(row + 1) * segs1 + col + 1 ];
+
+      // Two triangles per quad
+      mesh.addTriangle(
+        new Ammo.btVector3(x0, h00, z0),
+        new Ammo.btVector3(x1, h10, z0),
+        new Ammo.btVector3(x0, h01, z1),
+        false
+      );
+      mesh.addTriangle(
+        new Ammo.btVector3(x1, h10, z0),
+        new Ammo.btVector3(x1, h11, z1),
+        new Ammo.btVector3(x0, h01, z1),
+        false
+      );
+    }
+  }
+
+  const shape = new Ammo.btBvhTriangleMeshShape(mesh, true, true);
+
+  const transform = new Ammo.btTransform();
+  transform.setIdentity();
+  transform.setOrigin(new Ammo.btVector3(0, 0, 0));
+
+  const motionState = new Ammo.btDefaultMotionState(transform);
+  const localInertia = new Ammo.btVector3(0, 0, 0);
+  // Mass = 0 → static body
+  const rbInfo = new Ammo.btRigidBodyConstructionInfo(0, motionState, shape, localInertia);
+  const body = new Ammo.btRigidBody(rbInfo);
+  body.setFriction(0.8);
+  body.setRestitution(0.0);
+  physWorld.addRigidBody(body);
+
+  return body;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VEHICLE PHYSICS — btRaycastVehicle
+//
+// The vehicle chassis is a btRigidBody with a box collision shape.
+// btRaycastVehicle casts a ray per wheel downward from the attachment point,
+// computes suspension compression, applies spring + damper force to the chassis,
+// and handles friction forces for drive/brake/lateral.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Chassis dimensions (half-extents — Bullet uses half-sizes)
+const CHASSIS_HALF_W   = 1.05;   // width  half-extent
+const CHASSIS_HALF_H   = 0.35;   // height half-extent
+const CHASSIS_HALF_L   = 1.90;   // length half-extent
+
+// Wheel layout — connection points are in chassis-local space
+// X = lateral offset, Y = vertical from chassis centre, Z = fore/aft
+const WHEEL_DEFS = [
+  { name: 'FL', cx: -1.1, cy: -0.1, cz:  1.6, front: true  },
+  { name: 'FR', cx:  1.1, cy: -0.1, cz:  1.6, front: true  },
+  { name: 'RL', cx: -1.1, cy: -0.1, cz: -1.6, front: false },
+  { name: 'RR', cx:  1.1, cy: -0.1, cz: -1.6, front: false },
+];
+
+const WHEEL_RADIUS       = 0.42;   // metres
+const SUSPENSION_REST    = 0.55;   // rest length of spring (metres)
+const SUSPENSION_STIFF   = 22.0;   // spring stiffness — higher = stiffer
+const SUSPENSION_DAMP_C  = 2.8;    // damping compression
+const SUSPENSION_DAMP_R  = 4.2;    // damping relaxation (usually higher)
+const SUSPENSION_TRAVEL  = 0.4;    // max compression travel
+const WHEEL_FRICTION     = 3.5;    // friction slip — higher = more grip
+const ROLL_INFLUENCE     = 0.12;   // anti-roll (0=none, 1=full) — lower = more body roll
+
+// Engine/drivetrain
+const MAX_ENGINE_FORCE   = 5500;   // Newtons applied to driven wheels
+const MAX_BRAKE_FORCE    = 80;     // Nm brake torque
+const HANDBRAKE_FORCE    = 120;    // rear wheels only
+const MAX_STEER_ANGLE    = 0.52;   // radians (~30°)
+const STEER_SPEED        = 3.5;    // how fast steering interpolates (rad/s)
+const CHASSIS_MASS       = 1600;   // kg
+
+// Simple auto-gearbox
+const GEAR_RATIOS  = [3.8, 2.2, 1.5, 1.0, 0.72, 0.55]; // 6 forward gears
+const FINAL_DRIVE  = 4.0;
+const MAX_RPM      = 7000;
+const IDLE_RPM     = 850;
+
+function buildVehicle(spawnX, spawnY, spawnZ) {
+  // ── Chassis collision shape ──
+  // btBoxShape takes half-extents
+  const chassisShape = new Ammo.btBoxShape(
+    new Ammo.btVector3(CHASSIS_HALF_W, CHASSIS_HALF_H, CHASSIS_HALF_L)
+  );
+
+  // Centre of mass offset — shift CoM down slightly for stability
+  const localCoMOffset = new Ammo.btVector3(0, -0.15, 0);
+  const compound = new Ammo.btCompoundShape();
+  const localTransform = new Ammo.btTransform();
+  localTransform.setIdentity();
+  localTransform.setOrigin(localCoMOffset);
+  compound.addChildShape(localTransform, chassisShape);
+
+  // ── Chassis rigid body ──
+  const startTransform = new Ammo.btTransform();
+  startTransform.setIdentity();
+  startTransform.setOrigin(new Ammo.btVector3(spawnX, spawnY, spawnZ));
+
+  const localInertia = new Ammo.btVector3(0, 0, 0);
+  compound.calculateLocalInertia(CHASSIS_MASS, localInertia);
+
+  const motionState = new Ammo.btDefaultMotionState(startTransform);
+  const rbInfo = new Ammo.btRigidBodyConstructionInfo(
+    CHASSIS_MASS, motionState, compound, localInertia
+  );
+
+  vehicleBody = new Ammo.btRigidBody(rbInfo);
+  vehicleBody.setActivationState(4); // DISABLE_DEACTIVATION — always simulate
+  // setDamping(linear, angular) — single call available in ammo.js
+  if (vehicleBody.setDamping) {
+    vehicleBody.setDamping(0.02, 0.05);
+  }
+  physWorld.addRigidBody(vehicleBody);
+
+  // ── Vehicle tuning ──
+  vehicleTuning = new Ammo.btVehicleTuning();
+
+  // ── Raycaster ──
+  const vehicleRayCaster = new Ammo.btDefaultVehicleRaycaster(physWorld);
+
+  // ── btRaycastVehicle ──
+  vehicle = new Ammo.btRaycastVehicle(vehicleTuning, vehicleBody, vehicleRayCaster);
+  // Set coordinate system — X right, Y up, -Z forward (standard right-hand)
+  vehicle.setCoordinateSystem(0, 1, 2);
+  physWorld.addAction(vehicle);
+
+  // ── Add wheels ──
+  // btRaycastVehicle.addWheel(
+  //   connectionPoint, wheelDirection, wheelAxle,
+  //   suspensionRestLength, wheelRadius,
+  //   tuning, isFrontWheel
+  // )
+  const wheelDirection = new Ammo.btVector3(0, -1, 0);  // cast downward
+  const wheelAxle      = new Ammo.btVector3(-1, 0, 0);  // axle along -X
+
+  for (const def of WHEEL_DEFS) {
+    const connectionPt = new Ammo.btVector3(def.cx, def.cy, def.cz);
+    const wheelInfo = vehicle.addWheel(
+      connectionPt,
+      wheelDirection,
+      wheelAxle,
+      SUSPENSION_REST,
+      WHEEL_RADIUS,
+      vehicleTuning,
+      def.front
+    );
+
+    // Per-wheel suspension tuning — these are the same params as btVehicleTuning
+    // but set per-wheel so front/rear could differ
+    wheelInfo.set_m_suspensionStiffness(SUSPENSION_STIFF);
+    wheelInfo.set_m_wheelsDampingCompression(SUSPENSION_DAMP_C);
+    wheelInfo.set_m_wheelsDampingRelaxation(SUSPENSION_DAMP_R);
+    wheelInfo.set_m_frictionSlip(WHEEL_FRICTION);
+    wheelInfo.set_m_rollInfluence(ROLL_INFLUENCE);
+    wheelInfo.set_m_maxSuspensionTravelCm(SUSPENSION_TRAVEL * 100); // Bullet uses cm
+    wheelInfo.set_m_maxSuspensionForce(80000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VEHICLE DRIVE STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const drive = {
+  engineForce  : 0,
+  brakeForce   : 0,
+  steerCurrent : 0,    // actual interpolated steering angle (radians)
+  steerTarget  : 0,
+  gear         : 1,
+  rpm          : IDLE_RPM,
+  lapTime      : 0,
+  lapCount     : 0,
+  bestLap      : Infinity,
+  nextCP       : 0,
+  running      : false,
+};
+
+// Clamp helper
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// Compute vehicle speed in km/h from chassis linear velocity
+// (getCurrentSpeedKmHour is not in the standard ammo.js build)
+function getSpeedKmh() {
+  const v = vehicleBody.getLinearVelocity();
+  const ms = Math.sqrt(v.x() * v.x() + v.y() * v.y() + v.z() * v.z());
+  return ms * 3.6; // m/s → km/h
+}
+
+function updateVehicleDrive(dt, keys) {
+  if (!drive.running) return;
+
+  const throttle   = (keys['KeyW'] || keys['ArrowUp'])    ? 1 : 0;
+  const braking    = (keys['KeyS'] || keys['ArrowDown'])  ? 1 : 0;
+  const steerLeft  = (keys['KeyA'] || keys['ArrowLeft'])  ? 1 : 0;
+  const steerRight = (keys['KeyD'] || keys['ArrowRight']) ? 1 : 0;
+  const handbrake  = keys['Space'] || false;
+
+  // ── Steering interpolation ──
+  drive.steerTarget = (steerLeft - steerRight) * MAX_STEER_ANGLE;
+  const steerDelta  = drive.steerTarget - drive.steerCurrent;
+  drive.steerCurrent += clamp(steerDelta, -STEER_SPEED * dt, STEER_SPEED * dt);
+
+  // ── Wheel 0 FL, 1 FR: steering ──
+  vehicle.setSteeringValue(drive.steerCurrent, 0);
+  vehicle.setSteeringValue(drive.steerCurrent, 1);
+
+  // ── Speed for gear calculation ──
+  const speedKmh  = getSpeedKmh();
+  const speedAbs  = speedKmh; // always positive from magnitude
+
+  // ── Auto gear ──
+  if      (speedAbs >  130 && drive.gear < 6) drive.gear = 6;
+  else if (speedAbs >   95 && drive.gear < 5) drive.gear = 5;
+  else if (speedAbs >   65 && drive.gear < 4) drive.gear = 4;
+  else if (speedAbs >   40 && drive.gear < 3) drive.gear = 3;
+  else if (speedAbs >   18 && drive.gear < 2) drive.gear = 2;
+  else if (speedAbs <   12 && drive.gear > 2) drive.gear = 2;
+  else if (speedAbs <    6 && drive.gear > 1) drive.gear = 1;
+
+  // ── RPM simulation ──
+  const ratio = GEAR_RATIOS[drive.gear - 1] * FINAL_DRIVE;
+  const targetRPM = speedAbs * ratio * 10.5 + IDLE_RPM;
+  drive.rpm += (targetRPM - drive.rpm) * Math.min(1, dt * 4);
+  drive.rpm  = clamp(drive.rpm, IDLE_RPM, MAX_RPM * 1.08);
+
+  // ── Engine force ──
+  // Torque curve: peaks mid-RPM, falls off at redline
+  const rpmFrac     = clamp(drive.rpm / MAX_RPM, 0, 1);
+  const torqueCurve = Math.sin(rpmFrac * Math.PI * 0.88) * 0.9 + 0.1;
+  drive.engineForce = throttle * MAX_ENGINE_FORCE * torqueCurve;
+
+  // Engine braking when off throttle
+  if (!throttle && !braking && !handbrake) {
+    drive.engineForce = -clamp(speedAbs * 8, 0, 400); // gentle engine brake
+  }
+
+  // ── Apply engine force to all 4 wheels (AWD like most off-roaders) ──
+  vehicle.applyEngineForce(drive.engineForce, 0); // FL
+  vehicle.applyEngineForce(drive.engineForce, 1); // FR
+  vehicle.applyEngineForce(drive.engineForce, 2); // RL
+  vehicle.applyEngineForce(drive.engineForce, 3); // RR
+
+  // ── Braking ──
+  const frontBrake = braking ? MAX_BRAKE_FORCE : 0;
+  const rearBrake  = braking ? MAX_BRAKE_FORCE :
+                     handbrake ? HANDBRAKE_FORCE : 0;
+
+  vehicle.setBrake(frontBrake, 0); // FL
+  vehicle.setBrake(frontBrake, 1); // FR
+  vehicle.setBrake(rearBrake,  2); // RL
+  vehicle.setBrake(rearBrake,  3); // RR
+
+  // ── Lap timer ──
+  drive.lapTime += dt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHECKPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Circuit laid out as [worldX, worldZ] pairs — terrain Y looked up at runtime
+const CP_POSITIONS = [
+  [   0,    0], [ 70,  -55], [130,   15], [ 95,   90], [  15,  140],
+  [ -55,  110], [-110,   35], [-95,  -55], [-38, -110], [  28,  -75],
+];
+const CP_RADIUS = 10; // trigger radius
+
+const cpObjects = []; // { x, z, mesh }
+
+function buildCheckpoints(scene) {
+  for (let i = 0; i < CP_POSITIONS.length; i++) {
+    const [cx, cz] = CP_POSITIONS[i];
+    const cy = terrainHeight(cx, cz);
+    const isStart = i === 0;
+    const colour = isStart ? 0x00ff88 : 0xff8c00;
+    const mat = new THREE.MeshLambertMaterial({ color: colour, transparent: true, opacity: 0.75 });
+
+    // Two posts + crossbar
+    const postGeo = new THREE.CylinderGeometry(0.18, 0.22, 9, 7);
+    const post1   = new THREE.Mesh(postGeo, mat);
+    const post2   = new THREE.Mesh(postGeo, mat);
+    const barGeo  = new THREE.BoxGeometry(11, 0.28, 0.28);
+    const bar     = new THREE.Mesh(barGeo, mat);
+
+    post1.position.set(cx - 5.5, cy + 4.5, cz);
+    post2.position.set(cx + 5.5, cy + 4.5, cz);
+    bar.position.set(cx, cy + 9, cz);
+
+    post1.castShadow = true;
+    post2.castShadow = true;
+    scene.add(post1); scene.add(post2); scene.add(bar);
+
+    cpObjects.push({ x: cx, z: cz });
+  }
+}
+
+function checkCheckpointTrigger(px, pz) {
+  const cp = cpObjects[drive.nextCP];
+  const dx = px - cp.x, dz = pz - cp.z;
+  if (Math.sqrt(dx*dx + dz*dz) < CP_RADIUS) {
+    drive.nextCP = (drive.nextCP + 1) % CP_POSITIONS.length;
+    if (drive.nextCP === 0) {
+      // Completed a lap
+      drive.lapCount++;
+      if (drive.lapTime < drive.bestLap) drive.bestLap = drive.lapTime;
+      drive.lapTime = 0;
+    }
+    flashCheckpoint();
+  }
+}
+
+function flashCheckpoint() {
+  const el = document.getElementById('cp-flash');
+  el.style.opacity = '1';
+  el.style.transition = 'none';
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      el.style.transition = 'opacity 0.9s';
+      el.style.opacity = '0';
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THREE.JS SCENE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let renderer, scene, camera;
+let camHeading = 0; // smoothed camera yaw tracking vehicle
+
+function initThree() {
+  const canvas = document.getElementById('c');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+  renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x7a8a9a);
+  scene.fog        = new THREE.Fog(0x7a8a9a, 90, 380);
+
+  // ── Lighting ──
+  const sun = new THREE.DirectionalLight(0xfff0d0, 1.9);
+  sun.position.set(100, 160, 80);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near   = 1;
+  sun.shadow.camera.far    = 600;
+  sun.shadow.camera.left   = -180;
+  sun.shadow.camera.right  =  180;
+  sun.shadow.camera.top    =  180;
+  sun.shadow.camera.bottom = -180;
+  sun.shadow.bias = -0.0008;
+  scene.add(sun);
+
+  const ambient = new THREE.AmbientLight(0x3050a0, 0.65);
+  scene.add(ambient);
+
+  const fill = new THREE.DirectionalLight(0x7090c0, 0.35);
+  fill.position.set(-80, 50, -60);
+  scene.add(fill);
+
+  camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.3, 600);
+  camera.position.set(0, 8, -12);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ── Vehicle visual mesh (Three.js only — physics is Bullet) ──
+let carGroup;       // top-level group that follows Bullet chassis transform
+let wheelMeshes;    // array of 4 wheel meshes (also Three.js only)
+
+function buildCarVisual() {
+  carGroup = new THREE.Group();
+  scene.add(carGroup);
+
+  const bodyMat  = new THREE.MeshLambertMaterial({ color: 0xc42000 });
+  const darkMat  = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const glassMat = new THREE.MeshLambertMaterial({ color: 0x7799bb, transparent: true, opacity: 0.45 });
+  const chromeMat= new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
+
+  // Main body tub
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.75, 3.7), bodyMat);
+  body.position.y = 0.38;
+  body.castShadow = true;
+  carGroup.add(body);
+
+  // Cab
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.65, 2.1), bodyMat);
+  cab.position.set(0, 1.1, -0.15);
+  cab.castShadow = true;
+  carGroup.add(cab);
+
+  // Windscreen (slanted box)
+  const wind = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.52, 0.08), glassMat);
+  wind.position.set(0, 1.12, 0.9);
+  wind.rotation.x = -0.22;
+  carGroup.add(wind);
+
+  // Rear window
+  const rearWin = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.40, 0.08), glassMat);
+  rearWin.position.set(0, 1.08, -1.22);
+  rearWin.rotation.x = 0.18;
+  carGroup.add(rearWin);
+
+  // Side windows (left, right)
+  for (const sx of [-0.88, 0.88]) {
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.36, 1.4), glassMat);
+    sw.position.set(sx, 1.1, -0.18);
+    carGroup.add(sw);
+  }
+
+  // Front bumper / bull bar
+  const bumperF = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.35, 0.3), darkMat);
+  bumperF.position.set(0, 0.18, 1.95);
+  carGroup.add(bumperF);
+
+  // Rear bumper
+  const bumperR = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.28, 0.28), darkMat);
+  bumperR.position.set(0, 0.18, -1.95);
+  carGroup.add(bumperR);
+
+  // Roof rack
+  const rack = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.06, 1.65), darkMat);
+  rack.position.set(0, 1.45, -0.18);
+  carGroup.add(rack);
+
+  // Headlights
+  const hlMat = new THREE.MeshLambertMaterial({ color: 0xffffee, emissive: 0xffffee, emissiveIntensity: 0.6 });
+  for (const sx of [-0.65, 0.65]) {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.22, 0.08), hlMat);
+    hl.position.set(sx, 0.48, 1.9);
+    carGroup.add(hl);
+  }
+
+  // Tail lights
+  const tlMat = new THREE.MeshLambertMaterial({ color: 0xff1100, emissive: 0xff2200, emissiveIntensity: 0.4 });
+  for (const sx of [-0.62, 0.62]) {
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.08), tlMat);
+    tl.position.set(sx, 0.46, -1.9);
+    carGroup.add(tl);
+  }
+
+  // Exhaust pipe
+  const exh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6), chromeMat);
+  exh.rotation.z = Math.PI / 2;
+  exh.position.set(-1.05, 0.25, -1.7);
+  carGroup.add(exh);
+
+  // ── Wheels ──
+  // These are purely visual — positions are read from Bullet's wheel transforms
+  wheelMeshes = [];
+  const tyreMat = new THREE.MeshLambertMaterial({ color: 0x181818 });
+  const rimMat  = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+  const boltMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
+
+  for (let i = 0; i < 4; i++) {
+    const wg = new THREE.Group();
+    scene.add(wg); // NOT parented to carGroup — Bullet gives us world transform
+
+    // Tyre
+    const tyreGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.36, 16);
+    tyreGeo.rotateZ(Math.PI / 2);
+    const tyre = new THREE.Mesh(tyreGeo, tyreMat);
+    tyre.castShadow = true;
+    wg.add(tyre);
+
+    // Rim face
+    const rimGeo = new THREE.CylinderGeometry(0.20, 0.20, 0.37, 8);
+    rimGeo.rotateZ(Math.PI / 2);
+    wg.add(new THREE.Mesh(rimGeo, rimMat));
+
+    // 5 hub bolts
+    for (let b = 0; b < 5; b++) {
+      const angle = (b / 5) * Math.PI * 2;
+      const bolt  = new THREE.Mesh(new THREE.SphereGeometry(0.038, 4, 4), boltMat);
+      // Offset to outer face — left wheels: +X face, right wheels: -X face
+      const faceX = (i % 2 === 0) ? -0.20 : 0.20;
+      bolt.position.set(faceX, Math.sin(angle) * 0.12, Math.cos(angle) * 0.12);
+      wg.add(bolt);
+    }
+
+    wheelMeshes.push(wg);
+  }
+}
+
+// ── Scenery — rocks and trees ──
+function buildScenery() {
+  const rockMat = new THREE.MeshLambertMaterial({ color: 0x6a6058 });
+
+  for (let i = 0; i < 90; i++) {
+    const wx = (Math.random() - 0.5) * 480;
+    const wz = (Math.random() - 0.5) * 480;
+    // Keep area around spawn clear
+    if (Math.abs(wx) < 20 && Math.abs(wz) < 20) continue;
+    const wy = terrainHeight(wx, wz);
+    const r  = 0.4 + Math.random() * 2.8;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0),
+      new THREE.MeshLambertMaterial({
+        color: new THREE.Color(0.35 + Math.random()*0.12, 0.32 + Math.random()*0.10, 0.28)
+      })
+    );
+    rock.position.set(wx, wy + r * 0.25, wz);
+    rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    rock.castShadow = true;
+    scene.add(rock);
+  }
+
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x3d2810 });
+  for (let i = 0; i < 140; i++) {
+    const wx = (Math.random() - 0.5) * 490;
+    const wz = (Math.random() - 0.5) * 490;
+    if (Math.abs(wx) < 24 && Math.abs(wz) < 24) continue;
+    const wy = terrainHeight(wx, wz);
+    const h  = 3.5 + Math.random() * 7;
+
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, h, 6), trunkMat);
+    trunk.position.set(wx, wy + h * 0.5, wz);
+    trunk.castShadow = true;
+    scene.add(trunk);
+
+    const foliage = new THREE.Mesh(
+      new THREE.ConeGeometry(1.1 + Math.random() * 0.9, h * 0.85, 7),
+      new THREE.MeshLambertMaterial({
+        color: new THREE.Color(0.08 + Math.random()*0.12, 0.30 + Math.random()*0.16, 0.08)
+      })
+    );
+    foliage.position.set(wx, wy + h + 0.4, wz);
+    foliage.castShadow = true;
+    scene.add(foliage);
+  }
+}
+
+// ── Dust particles ──
+const DUST_COUNT = 256;
+const dustPositions = new Float32Array(DUST_COUNT * 3);
+const dustVelocities = Array.from({ length: DUST_COUNT }, () => new THREE.Vector3());
+const dustLife = new Float32Array(DUST_COUNT);
+let dustCursor = 0;
+let dustSystem;
+
+function buildDustSystem() {
+  const geo = new THREE.BufferGeometry();
+  for (let i = 0; i < DUST_COUNT; i++) dustPositions[i*3] = 99999;
+  geo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xaa8855, size: 0.55, transparent: true, opacity: 0.35, depthWrite: false
+  });
+  dustSystem = new THREE.Points(geo, mat);
+  scene.add(dustSystem);
+}
+
+function spawnDust(x, y, z, vx, vz) {
+  const i = dustCursor % DUST_COUNT;
+  dustPositions[i*3+0] = x;
+  dustPositions[i*3+1] = y;
+  dustPositions[i*3+2] = z;
+  dustVelocities[i].set(
+    vx * 0.25 + (Math.random()-0.5) * 2.5,
+    2.0 + Math.random() * 2.5,
+    vz * 0.25 + (Math.random()-0.5) * 2.5
+  );
+  dustLife[i] = 1.0;
+  dustCursor++;
+}
+
+function updateDust(dt) {
+  for (let i = 0; i < DUST_COUNT; i++) {
+    if (dustLife[i] <= 0) continue;
+    dustLife[i] -= dt * 1.0;
+    dustPositions[i*3+0] += dustVelocities[i].x * dt;
+    dustPositions[i*3+1] += dustVelocities[i].y * dt;
+    dustPositions[i*3+2] += dustVelocities[i].z * dt;
+    dustVelocities[i].y  -= 3.5 * dt; // gravity
+    if (dustLife[i] <= 0) dustPositions[i*3] = 99999;
+  }
+  dustSystem.geometry.attributes.position.needsUpdate = true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SYNC: read Bullet transform → write Three.js transform
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Reusable Ammo transform — allocating these each frame is expensive
+let btTmp; // allocated after Ammo loads
+
+function syncChassisToThree() {
+  vehicleBody.getMotionState().getWorldTransform(btTmp);
+
+  const origin = btTmp.getOrigin();
+  carGroup.position.set(origin.x(), origin.y(), origin.z());
+
+  const q = btTmp.getRotation();
+  carGroup.quaternion.set(q.x(), q.y(), q.z(), q.w());
+}
+
+function syncWheelsToThree() {
+  for (let i = 0; i < 4; i++) {
+    // Bullet updates each wheel's world transform after stepSimulation
+    vehicle.updateWheelTransform(i, true);
+    const wt = vehicle.getWheelTransformWS(i);
+
+    const o = wt.getOrigin();
+    wheelMeshes[i].position.set(o.x(), o.y(), o.z());
+
+    const q = wt.getRotation();
+    wheelMeshes[i].quaternion.set(q.x(), q.y(), q.z(), q.w());
+
+    // Wheel contact HUD
+    const wi = vehicle.getWheelInfo(i);
+    const onGround = wi.get_m_raycastInfo().get_m_isInContact();
+    const dotId = ['w-fl','w-fr','w-rl','w-rr'][i];
+    document.getElementById(dotId).className = 'w-dot' + (onGround ? '' : ' air');
+
+    // Spawn dust from rear wheels when they're spinning on ground
+    if (onGround && i >= 2 && getSpeedKmh() > 8) {
+      if (Math.random() < 0.18) {
+        const chassis = vehicleBody.getLinearVelocity();
+        spawnDust(o.x(), o.y() + 0.1, o.z(), chassis.x(), chassis.z());
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CAMERA — chase camera with independent yaw lag
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CAM_DISTANCE = 10;
+const CAM_HEIGHT   = 3.8;
+const CAM_LAG      = 4.5; // higher = snappier
+
+function updateCamera(dt) {
+  // Extract chassis yaw from quaternion
+  const q = carGroup.quaternion;
+  // yaw = atan2(2*(qw*qy + qx*qz), 1 - 2*(qy*qy + qz*qz))
+  const chassisYaw = Math.atan2(
+    2 * (q.w * q.y + q.x * q.z),
+    1 - 2 * (q.y * q.y + q.z * q.z)
+  );
+
+  // Smooth camera heading toward chassis heading
+  // Handle wrap-around
+  let diff = chassisYaw - camHeading;
+  while (diff >  Math.PI) diff -= 2 * Math.PI;
+  while (diff < -Math.PI) diff += 2 * Math.PI;
+  camHeading += diff * Math.min(1, dt * CAM_LAG);
+
+  // Target position behind and above vehicle
+  const tx = carGroup.position.x - Math.sin(camHeading) * CAM_DISTANCE;
+  const tz = carGroup.position.z - Math.cos(camHeading) * CAM_DISTANCE;
+  const groundUnderCam = terrainHeight(tx, tz);
+  const ty = Math.max(groundUnderCam + 1.8, carGroup.position.y + CAM_HEIGHT);
+
+  camera.position.lerp(new THREE.Vector3(tx, ty, tz), Math.min(1, dt * 7));
+
+  // Look slightly ahead of vehicle
+  const lookX = carGroup.position.x + Math.sin(chassisYaw) * 4;
+  const lookZ = carGroup.position.z + Math.cos(chassisYaw) * 4;
+  camera.lookAt(lookX, carGroup.position.y + 0.8, lookZ);
+
+  // Speed-sensitive FOV
+  const speedKmh = getSpeedKmh();
+  camera.fov = 72 + speedKmh * 0.10;
+  camera.updateProjectionMatrix();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HUD UPDATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function updateHUD() {
+  const kmh = getSpeedKmh();
+  document.getElementById('speed-num').textContent = Math.round(kmh);
+  document.getElementById('gear-display').textContent = drive.gear;
+
+  const rpmPct = Math.min(100, (drive.rpm / MAX_RPM) * 100);
+  document.getElementById('rpm-fill').style.width = rpmPct + '%';
+  document.getElementById('rpm-fill').style.background =
+    rpmPct > 88 ? '#ff2200' : '#ff8c00';
+
+  const t   = drive.lapTime;
+  const min = Math.floor(t / 60);
+  const sec = Math.floor(t % 60).toString().padStart(2, '0');
+  const ms  = Math.floor((t % 1) * 1000).toString().padStart(3, '0');
+  document.getElementById('lap-time').textContent = `${min}:${sec}.${ms}`;
+  document.getElementById('lap-label').textContent = `LAP ${drive.lapCount + 1}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESET — teleport vehicle back to start
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function resetVehicle() {
+  const spawnY = terrainHeight(0, 0) + 2.5;
+  const transform = new Ammo.btTransform();
+  transform.setIdentity();
+  transform.setOrigin(new Ammo.btVector3(0, spawnY, 0));
+  vehicleBody.setWorldTransform(transform);
+  vehicleBody.getMotionState().setWorldTransform(transform);
+  vehicleBody.setLinearVelocity(new Ammo.btVector3(0, 0, 0));
+  vehicleBody.setAngularVelocity(new Ammo.btVector3(0, 0, 0));
+  vehicleBody.activate();
+  drive.steerCurrent = 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) {
+    e.preventDefault();
+  }
+  if (e.code === 'KeyR' && drive.running) resetVehicle();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PHYSICS_SUBSTEPS  = 3;   // substeps per frame — more = more accurate
+const PHYSICS_FIXED_DT  = 1/120; // fixed internal timestep
+
+let lastTime = 0;
+
+function mainLoop(timestamp) {
+  requestAnimationFrame(mainLoop);
+
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  if (drive.running) {
+    // Drive input → Bullet vehicle forces
+    updateVehicleDrive(dt, keys);
+
+    // Step the Bullet world
+    // btDiscreteDynamicsWorld.stepSimulation(timeStep, maxSubSteps, fixedTimeStep)
+    physWorld.stepSimulation(dt, PHYSICS_SUBSTEPS, PHYSICS_FIXED_DT);
+
+    // Sync Bullet → Three.js
+    syncChassisToThree();
+    syncWheelsToThree();
+
+    // Checkpoint detection from chassis position
+    checkCheckpointTrigger(carGroup.position.x, carGroup.position.z);
+
+    // Particles
+    updateDust(dt);
+
+    // Camera
+    updateCamera(dt);
+
+    // HUD
+    updateHUD();
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STARTUP SEQUENCE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function setLoadStatus(text, pct) {
+  document.getElementById('loading-status').textContent = text;
+  document.getElementById('loading-bar').style.width = pct + '%';
+}
+
+function startRace() {
+  document.getElementById('title').style.display = 'none';
+  drive.running = true;
+  lastTime = performance.now();
+  requestAnimationFrame(mainLoop);
+}
+
+async function boot() {
+  setLoadStatus('LOADING AMMO.JS...', 5);
+
+  // Wait for the CDN script to actually finish loading
+  await window.__ammoReady;
+
+  // Ammo.js from CDN can behave in multiple ways depending on build variant:
+  //  1. window.Ammo is a factory function returning a Promise
+  //  2. window.Ammo is a factory function returning the module directly
+  //  3. window.Ammo is already the initialized module object
+  const AmmoLib = await (async () => {
+    const raw = window.Ammo;
+    if (!raw) throw new Error('Ammo.js did not load — check CDN');
+    if (typeof raw === 'function') {
+      const result = raw();
+      return (result && typeof result.then === 'function') ? await result : result;
+    }
+    return raw;
+  })();
+
+  setLoadStatus('INIT BULLET WORLD...', 20);
+  initBulletWorld(AmmoLib);
+
+  // Allocate reusable transform
+  btTmp = new AmmoLib.btTransform();
+
+  setLoadStatus('BUILDING TERRAIN...', 35);
+  const { heights, minH, maxH } = buildTerrainData();
+
+  setLoadStatus('UPLOADING TO BULLET...', 50);
+  buildBulletTerrain(heights);
+
+  setLoadStatus('BUILDING THREE.JS SCENE...', 62);
+  initThree();
+  const terrainMesh = buildThreeTerrain(heights);
+  scene.add(terrainMesh);
+
+  setLoadStatus('PLACING CHECKPOINTS...', 72);
+  buildCheckpoints(scene);
+
+  setLoadStatus('BUILDING VEHICLE...', 82);
+  const spawnY = terrainHeight(0, 0) + 2.5;
+  buildVehicle(0, spawnY, 0);
+  buildCarVisual();
+
+  setLoadStatus('POPULATING SCENERY...', 90);
+  buildScenery();
+  buildDustSystem();
+
+  setLoadStatus('READY', 100);
+  await new Promise(r => setTimeout(r, 300));
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('title').style.display = 'flex';
+}
+
+boot().catch(err => {
+  document.getElementById('loading-status').textContent = 'ERROR: ' + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
