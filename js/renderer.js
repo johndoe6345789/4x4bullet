@@ -3,6 +3,9 @@
 var renderer, scene, camera;
 var camHeading = 0;
 
+// Reusable vector for camera — avoids allocation every frame
+var _camTarget = null;
+
 function initThree() {
   const canvas = document.getElementById('c');
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -17,7 +20,6 @@ function initThree() {
   scene.background = new THREE.Color(0x7a8a9a);
   scene.fog        = new THREE.Fog(0x7a8a9a, 90, 380);
 
-  // Lighting
   const sun = new THREE.DirectionalLight(0xfff0d0, 1.9);
   sun.position.set(100, 160, 80);
   sun.castShadow = true;
@@ -41,6 +43,8 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.3, 600);
   camera.position.set(0, 8, -12);
 
+  _camTarget = new THREE.Vector3();
+
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -50,6 +54,12 @@ function initThree() {
 
 // Reusable Ammo transform
 var btTmp;
+
+// Cached wheel HUD dots
+var _wDots = [];
+function initWheelDots() {
+  _wDots = ['w-fl','w-fr','w-rl','w-rr'].map(id => document.getElementById(id));
+}
 
 function syncChassisToThree() {
   vehicleBody.getMotionState().getWorldTransform(btTmp);
@@ -74,8 +84,7 @@ function syncWheelsToThree() {
 
     const wi = vehicle.getWheelInfo(i);
     const onGround = wi.get_m_raycastInfo().get_m_isInContact();
-    const dotId = ['w-fl','w-fr','w-rl','w-rr'][i];
-    document.getElementById(dotId).className = 'w-dot' + (onGround ? '' : ' air');
+    _wDots[i].className = onGround ? 'w-dot' : 'w-dot air';
 
     if (onGround && i >= 2 && getSpeedKmh() > 8) {
       if (Math.random() < 0.18) {
@@ -98,8 +107,8 @@ function updateCamera(dt) {
   );
 
   let diff = chassisYaw - camHeading;
-  while (diff >  Math.PI) diff -= 2 * Math.PI;
-  while (diff < -Math.PI) diff += 2 * Math.PI;
+  if (diff >  Math.PI) diff -= 6.283185307;
+  if (diff < -Math.PI) diff += 6.283185307;
   camHeading += diff * Math.min(1, dt * CAM_LAG);
 
   const tx = carGroup.position.x - Math.sin(camHeading) * CAM_DISTANCE;
@@ -107,13 +116,18 @@ function updateCamera(dt) {
   const groundUnderCam = terrainHeight(tx, tz);
   const ty = Math.max(groundUnderCam + 1.8, carGroup.position.y + CAM_HEIGHT);
 
-  camera.position.lerp(new THREE.Vector3(tx, ty, tz), Math.min(1, dt * 7));
+  // Reuse _camTarget instead of allocating new Vector3 every frame
+  _camTarget.set(tx, ty, tz);
+  camera.position.lerp(_camTarget, Math.min(1, dt * 7));
 
   const lookX = carGroup.position.x + Math.sin(chassisYaw) * 4;
   const lookZ = carGroup.position.z + Math.cos(chassisYaw) * 4;
   camera.lookAt(lookX, carGroup.position.y + 0.8, lookZ);
 
-  const speedKmh = getSpeedKmh();
-  camera.fov = 72 + speedKmh * 0.10;
-  camera.updateProjectionMatrix();
+  // Only update projection matrix when FOV actually changes
+  const newFov = 72 + getSpeedKmh() * 0.10;
+  if (Math.abs(camera.fov - newFov) > 0.1) {
+    camera.fov = newFov;
+    camera.updateProjectionMatrix();
+  }
 }

@@ -1,22 +1,31 @@
 'use strict';
 
-// HUD
+// HUD — cache DOM elements to avoid getElementById every frame
+var _hudSpeed, _hudGear, _hudRpmFill, _hudLapTime, _hudLapLabel;
+
+function initHUD() {
+  _hudSpeed    = document.getElementById('speed-num');
+  _hudGear     = document.getElementById('gear-display');
+  _hudRpmFill  = document.getElementById('rpm-fill');
+  _hudLapTime  = document.getElementById('lap-time');
+  _hudLapLabel = document.getElementById('lap-label');
+}
+
 function updateHUD() {
   const kmh = getSpeedKmh();
-  document.getElementById('speed-num').textContent = Math.round(kmh);
-  document.getElementById('gear-display').textContent = drive.gear;
+  _hudSpeed.textContent = Math.round(kmh);
+  _hudGear.textContent = drive.gear;
 
   const rpmPct = Math.min(100, (drive.rpm / MAX_RPM) * 100);
-  document.getElementById('rpm-fill').style.width = rpmPct + '%';
-  document.getElementById('rpm-fill').style.background =
-    rpmPct > 88 ? '#ff2200' : '#ff8c00';
+  _hudRpmFill.style.width = rpmPct + '%';
+  _hudRpmFill.style.background = rpmPct > 88 ? '#ff2200' : '#ff8c00';
 
   const t   = drive.lapTime;
   const min = Math.floor(t / 60);
   const sec = Math.floor(t % 60).toString().padStart(2, '0');
   const ms  = Math.floor((t % 1) * 1000).toString().padStart(3, '0');
-  document.getElementById('lap-time').textContent = `${min}:${sec}.${ms}`;
-  document.getElementById('lap-label').textContent = `LAP ${drive.lapCount + 1}`;
+  _hudLapTime.textContent = `${min}:${sec}.${ms}`;
+  _hudLapLabel.textContent = `LAP ${drive.lapCount + 1}`;
 }
 
 // Input
@@ -35,7 +44,6 @@ const PHYSICS_SUBSTEPS = 3;
 const PHYSICS_FIXED_DT = 1/120;
 
 var lastTime = 0;
-var chunkTimer = 0;
 
 function mainLoop(timestamp) {
   requestAnimationFrame(mainLoop);
@@ -53,12 +61,8 @@ function mainLoop(timestamp) {
     updateCamera(dt);
     updateHUD();
 
-    // Stream terrain chunks around the vehicle (throttled)
-    chunkTimer += dt;
-    if (chunkTimer > 0.5) {
-      chunkTimer = 0;
-      updateChunks(carGroup.position.x, carGroup.position.z);
-    }
+    // Stream chunks every frame (throttled internally to MAX_CHUNKS_PER_FRAME)
+    updateChunks(carGroup.position.x, carGroup.position.z);
   }
 
   renderer.render(scene, camera);
@@ -97,10 +101,17 @@ async function boot() {
 
   setLoadStatus('BUILDING THREE.JS SCENE...', 40);
   initThree();
+  initHUD();
+  initWheelDots();
+  initChunkPools();
 
   setLoadStatus('LOADING TERRAIN CHUNKS...', 55);
-  // Load initial chunks around spawn (0, 0)
-  updateChunks(0, 0);
+  // Load ALL initial chunks (no throttle for boot)
+  for (let dx = -LOAD_RADIUS; dx <= LOAD_RADIUS; dx++) {
+    for (let dz = -LOAD_RADIUS; dz <= LOAD_RADIUS; dz++) {
+      loadChunk(dx, dz);
+    }
+  }
 
   setLoadStatus('PLACING CHECKPOINTS...', 72);
   buildCheckpoints(scene);
